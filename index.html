@@ -444,9 +444,16 @@ async function analyzeImage(b64, customPrompt = null) {
            if (errData.error && errData.error.message) errMsg = errData.error.message;
         } catch(e) {}
 
-        if (res.status === 400) throw new Error('Ошибка 400. Ключ недействителен.');
-        if (res.status === 403) throw new Error('Ошибка 403: Доступ запрещен. Убедись, что VPN работает.');
+        // Отлавливаем только явную ошибку неверного ключа
+        if (errMsg.toLowerCase().includes('api key not valid')) {
+            throw new Error('Ошибка: Неверный API-ключ. Проверьте правильность ввода.');
+        }
+        // Отлавливаем только жесткую блокировку доступа
+        if (res.status === 403) {
+            throw new Error('Ошибка 403: Доступ запрещен. Убедитесь, что работает VPN.');
+        }
         
+        // Все остальные ошибки (лимиты, неподдерживаемые функции, перегрузки) просто пропускаем
         lastErrorMsg = `${res.status}: ${errMsg} (${model})`;
         continue; 
       }
@@ -459,14 +466,14 @@ async function analyzeImage(b64, customPrompt = null) {
          continue;
       }
     } catch(e) {
-      if(e.message.includes('400') || e.message.includes('403')) {
-          throw e;
+      if(e.message.includes('Неверный API-ключ') || e.message.includes('403')) {
+          throw e; // Жесткие ошибки пробрасываем сразу
       }
       lastErrorMsg = e.message;
     }
   }
 
-  throw new Error(`Все модели перегружены. Последняя ошибка: ${lastErrorMsg}`);
+  throw new Error(`Все модели недоступны или перегружены. Последняя ошибка: ${lastErrorMsg}`);
 }
 
 // ── BUTTONS LOGIC ─────────────────────────────────────────
