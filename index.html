@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Распознаватель AI</title>
+
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#040412">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="./icon-192.png">
+
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -211,19 +218,28 @@
 <div id="errorToast"></div>
 
 <script>
+// Регистрация Service Worker для PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('SW зарегистрирован!', reg))
+      .catch(err => console.log('Ошибка SW', err));
+  });
+}
+
 let lang = 'ru', state = 'idle', apiKey = '', availableModels = [];
-let lastCapturedB64 = null; // Сохраняем фото для уточняющих вопросов
+let lastCapturedB64 = null; 
 
 // ── INIT ─────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   spawnParticles();
-  const saved = sessionStorage.getItem('_gemini_key');
+  // ИЗМЕНЕНИЕ: Теперь используем localStorage, чтобы ключ жил вечно
+  const saved = localStorage.getItem('_gemini_key');
   if (saved) { apiKey = saved; document.getElementById('apiKeyInput').value = saved; setSaved(true); }
   document.getElementById('apiKeyInput').addEventListener('input', e => {
     document.getElementById('startBtn').disabled = e.target.value.trim().length < 10;
   });
   
-  // Отправка вопроса по Enter
   document.getElementById('clarifyInput').addEventListener('keypress', function(e) {
       if (e.key === 'Enter') doClarify();
   });
@@ -239,7 +255,7 @@ function setSaved(v) {
   if (v) document.getElementById('startBtn').disabled = false;
 }
 function clearKey() {
-  sessionStorage.removeItem('_gemini_key'); apiKey = ''; availableModels = [];
+  localStorage.removeItem('_gemini_key'); apiKey = ''; availableModels = [];
   document.getElementById('apiKeyInput').value = '';
   document.getElementById('startBtn').disabled = true;
   setSaved(false);
@@ -248,7 +264,8 @@ function showApiScreen() { document.getElementById('apiScreen').classList.remove
 function startApp() {
   const k = document.getElementById('apiKeyInput').value.trim();
   if (k.length < 10) return;
-  apiKey = k; sessionStorage.setItem('_gemini_key', k); setSaved(true);
+  // ИЗМЕНЕНИЕ: Сохраняем в localStorage
+  apiKey = k; localStorage.setItem('_gemini_key', k); setSaved(true);
   document.getElementById('apiScreen').classList.add('hidden');
   initCamera();
 }
@@ -349,7 +366,6 @@ async function analyzeImage(b64, customPrompt = null) {
 
   const data = b64.split(',')[1];
   
-  // Обновленный промпт: жесткий фокус только на основном объекте
   const defaultPromptRu = 'Назови и опиши ТОЛЬКО главный объект на фото, игнорируя фон, окружение и всё остальное вокруг. Ответь 1 предложением, сразу суть. Если на объекте есть бренд или текст, назови его.';
   const defaultPromptEn = 'Name and describe ONLY the main object in the photo, ignoring the background and surroundings. Answer in 1 sentence, straight to the point. If there is a brand or text on it, mention it.';
 
@@ -391,7 +407,6 @@ async function analyzeImage(b64, customPrompt = null) {
       
       const d = await res.json();
       if (d.candidates && d.candidates[0].content.parts[0].text) {
-         // Возвращаем просто текст ответа (без префикса модели)
          return d.candidates[0].content.parts[0].text.trim();
       } else {
          lastErrorMsg = `Нейросеть не смогла дать ответ (${model})`;
@@ -433,7 +448,6 @@ async function doRecognize() {
     document.getElementById('resultText').innerHTML='';
     
     typewrite(result, document.getElementById('resultText'), 20, () => {
-        // После печати текста показываем блок для уточняющего вопроса
         document.getElementById('clarifyBox').classList.add('visible');
     });
     
@@ -463,7 +477,6 @@ async function doClarify() {
 
      const rt = document.getElementById('resultText');
      
-     // Скрываем блок вопроса, так как разрешен только 1 вопрос
      document.getElementById('clarifyBox').classList.remove('visible');
      
      const separator = document.createElement('div');
