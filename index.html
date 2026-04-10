@@ -245,20 +245,10 @@ if ('serviceWorker' in navigator) {
 let lang = 'ru', state = 'idle', apiKey = '', availableModels = [];
 let lastCapturedB64 = null; 
 let synth = window.speechSynthesis;
-let voices = [];
-
-// Принудительно подгружаем список системных голосов
-function loadVoices() {
-  voices = synth.getVoices();
-}
-if (speechSynthesis.onvoiceschanged !== undefined) {
-  speechSynthesis.onvoiceschanged = loadVoices;
-}
 
 // ── INIT ─────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   spawnParticles();
-  loadVoices(); // Инициализация голосов при загрузке
   
   const saved = localStorage.getItem('_gemini_key');
   if (saved) { apiKey = saved; document.getElementById('apiKeyInput').value = saved; setSaved(true); }
@@ -351,7 +341,7 @@ function typewrite(text,el,speed=20, onComplete=null) {
   },speed);
 }
 
-// ── TTS (ОЗВУЧКА) С ПРИНУДИТЕЛЬНЫМ ВЫБОРОМ ГОЛОСА ─────────
+// ── TTS (ОЗВУЧКА) С ЖЕСТКОЙ ПРИВЯЗКОЙ РУССКОГО ГОЛОСА ─────────
 function toggleTTS() {
   const btn = document.getElementById('ttsBtn');
   
@@ -367,18 +357,21 @@ function toggleTTS() {
 
   const utterance = new SpeechSynthesisUtterance(text);
   
-  // Устанавливаем язык
+  // Жестко задаем язык
   utterance.lang = lang === 'ru' ? 'ru-RU' : 'en-US';
   
-  // Принудительно ищем голос, соответствующий языку
-  if (voices.length > 0) {
-      let targetLang = lang === 'ru' ? 'ru' : 'en';
-      // Пытаемся найти качественный голос от Google (если есть), иначе берем первый подходящий
-      let voice = voices.find(v => v.lang.toLowerCase().includes(targetLang) && v.name.includes('Google')) ||
-                  voices.find(v => v.lang.toLowerCase().includes(targetLang));
-      
-      if (voice) {
-          utterance.voice = voice;
+  // Принудительно ищем системный голос
+  let sysVoices = synth.getVoices();
+  if (sysVoices.length > 0) {
+      if (lang === 'ru') {
+          // Ищем именно русский. Сначала от Google, если нет - любой другой русский
+          let ruVoice = sysVoices.find(v => v.lang.includes('ru') && v.name.includes('Google')) ||
+                        sysVoices.find(v => v.lang.includes('ru'));
+          if (ruVoice) utterance.voice = ruVoice;
+      } else {
+          let enVoice = sysVoices.find(v => v.lang.includes('en') && v.name.includes('Google')) ||
+                        sysVoices.find(v => v.lang.includes('en'));
+          if (enVoice) utterance.voice = enVoice;
       }
   }
   
