@@ -346,15 +346,12 @@ function typewrite(text,el,speed=20, onComplete=null) {
 function toggleTTS() {
   const btn = document.getElementById('ttsBtn');
   
-  // Если уже говорит - выключаем
   if (synth.speaking) {
     stopTTS();
     return;
   }
   
-  // Читаем весь текстовый контент из блока (и само описание, и уточнение, если есть)
   let text = document.getElementById('resultText').innerText;
-  // Убираем служебное слово "ОТВЕТ:", чтобы не ломать погружение
   text = text.replace(/ОТВЕТ:|ANSWER:/gi, '').trim();
   
   if (!text) return;
@@ -477,7 +474,7 @@ function handleBtn() { if(state==='idle') doRecognize(); else if(state==='result
 
 async function doRecognize() {
   state='analyzing';
-  stopTTS(); // Выключаем звук, если он шел
+  stopTTS();
   lastCapturedB64 = captureFrame(); 
   showCaptured(lastCapturedB64);
   
@@ -488,7 +485,6 @@ async function doRecognize() {
   document.getElementById('crosshair').classList.add('hidden');
   document.getElementById('scanLine').classList.add('scanning');
   
-  // Скрываем кнопку озвучки до готовности
   document.getElementById('ttsBtn').classList.remove('visible');
   
   try {
@@ -502,7 +498,7 @@ async function doRecognize() {
     
     typewrite(result, document.getElementById('resultText'), 20, () => {
         document.getElementById('clarifyBox').classList.add('visible');
-        document.getElementById('ttsBtn').classList.add('visible'); // Показываем динамик
+        document.getElementById('ttsBtn').classList.add('visible');
     });
     
     btn.className='again'; txt.textContent=lang==='ru'?'РАСПОЗНАТЬ ЕЩЁ':'IDENTIFY AGAIN';
@@ -521,7 +517,7 @@ async function doClarify() {
   
   if(!q || !lastCapturedB64) return;
 
-  stopTTS(); // Прерываем чтение, если оно шло
+  stopTTS();
   btnEl.disabled = true;
   inputEl.disabled = true;
   btnEl.innerHTML = '<span class="loading-dots" style="color:#fff"><span></span><span></span><span></span></span>';
@@ -555,7 +551,7 @@ async function doClarify() {
 
 function doReset() {
   state='idle'; 
-  stopTTS(); // Выключаем звук
+  stopTTS();
   hideCaptured();
   lastCapturedB64 = null;
   document.getElementById('ttsBtn').classList.remove('visible');
