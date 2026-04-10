@@ -238,19 +238,28 @@
 // Регистрация Service Worker для PWA
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('SW зарегистрирован!', reg))
-      .catch(err => console.log('Ошибка SW', err));
+    navigator.serviceWorker.register('./sw.js').catch(err => console.log('Ошибка SW', err));
   });
 }
 
 let lang = 'ru', state = 'idle', apiKey = '', availableModels = [];
 let lastCapturedB64 = null; 
 let synth = window.speechSynthesis;
+let voices = [];
+
+// Принудительно подгружаем список системных голосов
+function loadVoices() {
+  voices = synth.getVoices();
+}
+if (speechSynthesis.onvoiceschanged !== undefined) {
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
 
 // ── INIT ─────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   spawnParticles();
+  loadVoices(); // Инициализация голосов при загрузке
+  
   const saved = localStorage.getItem('_gemini_key');
   if (saved) { apiKey = saved; document.getElementById('apiKeyInput').value = saved; setSaved(true); }
   document.getElementById('apiKeyInput').addEventListener('input', e => {
@@ -342,7 +351,7 @@ function typewrite(text,el,speed=20, onComplete=null) {
   },speed);
 }
 
-// ── TTS (ОЗВУЧКА) ─────────────────────────────────────────
+// ── TTS (ОЗВУЧКА) С ПРИНУДИТЕЛЬНЫМ ВЫБОРОМ ГОЛОСА ─────────
 function toggleTTS() {
   const btn = document.getElementById('ttsBtn');
   
@@ -357,7 +366,21 @@ function toggleTTS() {
   if (!text) return;
 
   const utterance = new SpeechSynthesisUtterance(text);
+  
+  // Устанавливаем язык
   utterance.lang = lang === 'ru' ? 'ru-RU' : 'en-US';
+  
+  // Принудительно ищем голос, соответствующий языку
+  if (voices.length > 0) {
+      let targetLang = lang === 'ru' ? 'ru' : 'en';
+      // Пытаемся найти качественный голос от Google (если есть), иначе берем первый подходящий
+      let voice = voices.find(v => v.lang.toLowerCase().includes(targetLang) && v.name.includes('Google')) ||
+                  voices.find(v => v.lang.toLowerCase().includes(targetLang));
+      
+      if (voice) {
+          utterance.voice = voice;
+      }
+  }
   
   utterance.onstart = () => btn.classList.add('playing');
   utterance.onend = () => btn.classList.remove('playing');
@@ -444,16 +467,13 @@ async function analyzeImage(b64, customPrompt = null) {
            if (errData.error && errData.error.message) errMsg = errData.error.message;
         } catch(e) {}
 
-        // Отлавливаем только явную ошибку неверного ключа
         if (errMsg.toLowerCase().includes('api key not valid')) {
             throw new Error('Ошибка: Неверный API-ключ. Проверьте правильность ввода.');
         }
-        // Отлавливаем только жесткую блокировку доступа
         if (res.status === 403) {
             throw new Error('Ошибка 403: Доступ запрещен. Убедитесь, что работает VPN.');
         }
         
-        // Все остальные ошибки (лимиты, неподдерживаемые функции, перегрузки) просто пропускаем
         lastErrorMsg = `${res.status}: ${errMsg} (${model})`;
         continue; 
       }
@@ -467,7 +487,7 @@ async function analyzeImage(b64, customPrompt = null) {
       }
     } catch(e) {
       if(e.message.includes('Неверный API-ключ') || e.message.includes('403')) {
-          throw e; // Жесткие ошибки пробрасываем сразу
+          throw e; 
       }
       lastErrorMsg = e.message;
     }
