@@ -12,6 +12,8 @@
 <link rel="apple-touch-icon" href="./icon-192.png">
 
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://js.puter.com/v2/"></script>
+
 <style>
   :root {
     --glass-bg: rgba(255,255,255,0.08);
@@ -244,7 +246,8 @@ if ('serviceWorker' in navigator) {
 
 let lang = 'ru', state = 'idle', apiKey = '', availableModels = [];
 let lastCapturedB64 = null; 
-let synth = window.speechSynthesis;
+let currentAudio = null;
+let isPlayingTTS = false;
 
 // ── INIT ─────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
@@ -341,11 +344,11 @@ function typewrite(text,el,speed=20, onComplete=null) {
   },speed);
 }
 
-// ── TTS (ОЗВУЧКА) С ЖЕСТКОЙ ПРИВЯЗКОЙ РУССКОГО ГОЛОСА ─────────
-function toggleTTS() {
+// ── TTS (ОЗВУЧКА) ЧЕРЕЗ PUTER.JS ─────────────────────────
+async function toggleTTS() {
   const btn = document.getElementById('ttsBtn');
   
-  if (synth.speaking) {
+  if (isPlayingTTS) {
     stopTTS();
     return;
   }
@@ -355,35 +358,36 @@ function toggleTTS() {
   
   if (!text) return;
 
-  const utterance = new SpeechSynthesisUtterance(text);
-  
-  // Жестко задаем язык
-  utterance.lang = lang === 'ru' ? 'ru-RU' : 'en-US';
-  
-  // Принудительно ищем системный голос
-  let sysVoices = synth.getVoices();
-  if (sysVoices.length > 0) {
-      if (lang === 'ru') {
-          // Ищем именно русский. Сначала от Google, если нет - любой другой русский
-          let ruVoice = sysVoices.find(v => v.lang.includes('ru') && v.name.includes('Google')) ||
-                        sysVoices.find(v => v.lang.includes('ru'));
-          if (ruVoice) utterance.voice = ruVoice;
-      } else {
-          let enVoice = sysVoices.find(v => v.lang.includes('en') && v.name.includes('Google')) ||
-                        sysVoices.find(v => v.lang.includes('en'));
-          if (enVoice) utterance.voice = enVoice;
-      }
-  }
-  
-  utterance.onstart = () => btn.classList.add('playing');
-  utterance.onend = () => btn.classList.remove('playing');
-  utterance.onerror = () => btn.classList.remove('playing');
+  btn.classList.add('playing');
+  isPlayingTTS = true;
 
-  synth.speak(utterance);
+  try {
+    currentAudio = await puter.ai.txt2speech(text);
+    
+    currentAudio.onended = () => {
+      btn.classList.remove('playing');
+      isPlayingTTS = false;
+    };
+    
+    currentAudio.onerror = () => {
+      btn.classList.remove('playing');
+      isPlayingTTS = false;
+    };
+
+    currentAudio.play();
+  } catch (err) {
+    console.error("Ошибка озвучки:", err);
+    btn.classList.remove('playing');
+    isPlayingTTS = false;
+  }
 }
 
 function stopTTS() {
-  if (synth.speaking) synth.cancel();
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+  }
+  isPlayingTTS = false;
   document.getElementById('ttsBtn').classList.remove('playing');
 }
 
