@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Распознаватель AI</title>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@latest"></script>
 <style>
   :root {
     --glass-bg: rgba(255,255,255,0.08);
@@ -65,7 +63,7 @@
   #resultArea.visible { display:block; }
   #resultLabel { font-size:10px; font-weight:700; letter-spacing:0.14em; color:var(--accent); text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
   #resultLabel::before { content:''; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
-  #resultText { font-size:15px; line-height:1.6; color:var(--text); text-transform: capitalize; }
+  #resultText { font-size:15px; line-height:1.6; color:var(--text); }
   #typingCursor { display:inline-block; width:2px; height:1em; background:var(--accent); margin-left:2px; vertical-align:text-bottom; animation:blink .7s step-end infinite; border-radius:1px; }
   @keyframes blink { 50%{opacity:0} }
   .divider { height:1px; background:linear-gradient(90deg,transparent,var(--glass-border),transparent); margin:14px 0; display:none; }
@@ -76,7 +74,6 @@
   #mainBtn.analyzing { background:linear-gradient(135deg,rgba(255,160,80,0.5),rgba(255,80,120,0.5)); pointer-events:none; }
   #mainBtn.again { background:linear-gradient(135deg,rgba(80,220,140,0.5),rgba(40,180,220,0.5)); box-shadow:inset 0 1px 0 rgba(255,255,255,0.3); }
   #mainBtn:active { transform:scale(0.97); }
-  #mainBtn:disabled { opacity: 0.6; cursor: not-allowed; }
   .btn-shine { position:absolute; top:0; left:-100%; width:55%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,0.13),transparent); animation:shine 3s ease infinite; }
   @keyframes shine { 0%{left:-100%} 30%{left:120%} 100%{left:120%} }
   .loading-dots { display:inline-flex; gap:4px; align-items:center; }
@@ -94,9 +91,59 @@
 
   #errorToast { position:fixed; top:100px; left:14px; right:14px; z-index:30; padding:13px 16px; border-radius:16px; background:rgba(255,80,80,0.15); border:1px solid rgba(255,80,80,0.3); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); color:#ff9999; font-size:13px; line-height:1.5; transform:translateY(-16px); opacity:0; transition:all .3s; pointer-events:none; }
   #errorToast.show { transform:translateY(0); opacity:1; }
+
+  /* ═══ API KEY SCREEN ═══ */
+  #apiScreen { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; padding:24px; background:linear-gradient(160deg,#040412 0%,#0e0620 50%,#040e0c 100%); }
+  #apiScreen.hidden { display:none; }
+  #apiScreen::before { content:''; position:absolute; inset:0; background:radial-gradient(ellipse 70% 50% at 50% 25%,rgba(120,80,255,0.15),transparent),radial-gradient(ellipse 55% 40% at 25% 80%,rgba(40,180,220,0.1),transparent); pointer-events:none; }
+  .api-card { width:100%; max-width:390px; padding:28px 22px; border-radius:28px; position:relative; z-index:1; }
+  .api-icon { display:block; width:60px; height:60px; margin:0 auto 16px; border-radius:18px; background:linear-gradient(135deg,rgba(120,210,255,0.18),rgba(160,100,255,0.18)); border:1px solid rgba(255,255,255,0.12); display:flex; align-items:center; justify-content:center; font-size:28px; box-shadow:0 0 28px rgba(120,180,255,0.12); }
+  .api-title { font-family:'Unbounded',sans-serif; font-size:18px; font-weight:700; color:var(--text); text-align:center; margin-bottom:6px; }
+  .api-title span { background:linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  .api-sub { color:var(--text-dim); font-size:13px; line-height:1.55; text-align:center; margin-bottom:22px; }
+  .api-inp-wrap { position:relative; margin-bottom:12px; }
+  #apiKeyInput { width:100%; padding:14px 46px 14px 16px; border-radius:16px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.07); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); color:var(--text); font-size:14px; font-family:'Inter',sans-serif; outline:none; transition:border-color 0.25s; letter-spacing:0.03em; }
+  #apiKeyInput:focus { border-color:rgba(120,210,255,0.5); }
+  #apiKeyInput::placeholder { color:var(--text-dim); letter-spacing:0; }
+  #toggleVis { position:absolute; right:14px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; color:var(--text-dim); font-size:18px; padding:2px; line-height:1; }
+  .api-hint { font-size:11.5px; color:var(--text-dim); line-height:1.65; margin-bottom:20px; padding:11px 13px; border-radius:13px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); }
+  .api-hint a { color:var(--accent); text-decoration:none; font-weight: bold; }
+  #startBtn { width:100%; padding:16px; border-radius:18px; border:none; cursor:pointer; font-family:'Unbounded',sans-serif; font-size:12px; font-weight:700; letter-spacing:0.07em; color:#fff; background:linear-gradient(135deg,rgba(120,210,255,0.6),rgba(140,100,255,0.6)); box-shadow:inset 0 1px 0 rgba(255,255,255,0.25),0 6px 24px rgba(120,160,255,0.2); transition:transform 0.15s,opacity 0.2s; position:relative; overflow:hidden; }
+  #startBtn:active { transform:scale(0.97); }
+  #startBtn:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+  .api-footer { display:flex; align-items:center; justify-content:center; gap:10px; margin-top:12px; flex-wrap:wrap; }
+  #savedBadge { display:none; font-size:11px; color:rgba(80,220,140,0.9); align-items:center; gap:4px; }
+  #savedBadge.visible { display:flex; }
+  #savedBadge::before { content:'✓'; font-weight:700; }
+  #clearBtn { font-size:11px; color:var(--text-dim); background:none; border:none; cursor:pointer; text-decoration:underline; display:none; }
+  #clearBtn.visible { display:block; }
+  #keyBtn { background:none; border:none; cursor:pointer; color:var(--text-dim); font-size:19px; padding:2px; line-height:1; }
 </style>
 </head>
 <body>
+
+<div id="apiScreen">
+  <div class="api-card glass">
+    <div style="display:flex;justify-content:center;margin-bottom:16px">
+      <div class="api-icon">⚡</div>
+    </div>
+    <div class="api-title">Распознаватель <span>AI</span></div>
+    <div class="api-sub">Используем БЕСПЛАТНУЮ мощь Google Gemini</div>
+    <div class="api-inp-wrap">
+      <input id="apiKeyInput" type="password" placeholder="AIzaSy..." autocomplete="off" autocorrect="off" spellcheck="false">
+      <button id="toggleVis" onclick="toggleVis()">👁</button>
+    </div>
+    <div class="api-hint">
+      Ключ бесплатный и сохраняется только в твоём браузере.<br><br>
+      Получить ключ за 1 минуту (с включенным VPN): <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> → Кнопка "Create API key".
+    </div>
+    <button id="startBtn" onclick="startApp()" disabled>ЗАПУСТИТЬ</button>
+    <div class="api-footer">
+      <div id="savedBadge">Ключ сохранён</div>
+      <button id="clearBtn" onclick="clearKey()">Сбросить ключ</button>
+    </div>
+  </div>
+</div>
 
 <video id="videoEl" autoplay playsinline muted style="display:none"></video>
 <img id="capturedImg" alt="">
@@ -108,6 +155,7 @@
   <div id="topBarInner" class="glass">
     <div id="appTitle">Распознаватель <span>AI</span></div>
     <div style="display:flex;align-items:center;gap:8px">
+      <button id="keyBtn" onclick="showApiScreen()" title="Сменить ключ">🔑</button>
       <div id="langToggle">
         <button class="lang-btn active" data-lang="ru" onclick="setLang('ru')">RU</button>
         <button class="lang-btn" data-lang="en" onclick="setLang('en')">EN</button>
@@ -131,9 +179,9 @@
       <div id="resultText"></div>
     </div>
     <div id="divider" class="divider"></div>
-    <button id="mainBtn" class="idle" onclick="handleBtn()" disabled>
+    <button id="mainBtn" class="idle" onclick="handleBtn()">
       <div class="btn-shine"></div>
-      <span id="btnText">ЗАГРУЗКА ИИ...</span>
+      <span id="btnText">РАСПОЗНАТЬ</span>
     </button>
   </div>
 </div>
@@ -146,26 +194,40 @@
 <div id="errorToast"></div>
 
 <script>
-let lang = 'ru';
-let state = 'idle';
-let net = null; // Переменная для нейросети
+let lang = 'ru', state = 'idle', apiKey = '';
 
 // ── INIT ─────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', () => {
   spawnParticles();
-  initCamera();
-  await loadModel();
+  const saved = sessionStorage.getItem('_gemini_key');
+  if (saved) { apiKey = saved; document.getElementById('apiKeyInput').value = saved; setSaved(true); }
+  document.getElementById('apiKeyInput').addEventListener('input', e => {
+    document.getElementById('startBtn').disabled = e.target.value.trim().length < 10;
+  });
 });
 
-async function loadModel() {
-  try {
-    // Загружаем MobileNet (локальная ML модель)
-    net = await mobilenet.load();
-    document.getElementById('mainBtn').disabled = false;
-    updateBtnText();
-  } catch(e) {
-    showError("Ошибка загрузки нейросети. Проверьте интернет.");
-  }
+function toggleVis() {
+  const i = document.getElementById('apiKeyInput');
+  i.type = i.type === 'password' ? 'text' : 'password';
+}
+function setSaved(v) {
+  document.getElementById('savedBadge').classList.toggle('visible', v);
+  document.getElementById('clearBtn').classList.toggle('visible', v);
+  if (v) document.getElementById('startBtn').disabled = false;
+}
+function clearKey() {
+  sessionStorage.removeItem('_gemini_key'); apiKey = '';
+  document.getElementById('apiKeyInput').value = '';
+  document.getElementById('startBtn').disabled = true;
+  setSaved(false);
+}
+function showApiScreen() { document.getElementById('apiScreen').classList.remove('hidden'); }
+function startApp() {
+  const k = document.getElementById('apiKeyInput').value.trim();
+  if (k.length < 10) return;
+  apiKey = k; sessionStorage.setItem('_gemini_key', k); setSaved(true);
+  document.getElementById('apiScreen').classList.add('hidden');
+  initCamera();
 }
 
 // ── LANG ─────────────────────────────────────────────────
@@ -173,16 +235,8 @@ function setLang(l) {
   lang = l;
   document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === l));
   document.getElementById('resultLabel').textContent = l === 'ru' ? 'РЕЗУЛЬТАТ' : 'RESULT';
-  updateBtnText();
-}
-
-function updateBtnText() {
-  if(!net) {
-    document.getElementById('btnText').textContent = lang === 'ru' ? 'ЗАГРУЗКА ИИ...' : 'LOADING AI...';
-    return;
-  }
-  if (state === 'idle') document.getElementById('btnText').textContent = lang === 'ru' ? 'РАСПОЗНАТЬ' : 'IDENTIFY';
-  else if (state === 'result') document.getElementById('btnText').textContent = lang === 'ru' ? 'РАСПОЗНАТЬ ЕЩЁ' : 'IDENTIFY AGAIN';
+  if (state === 'idle') document.getElementById('btnText').textContent = l === 'ru' ? 'РАСПОЗНАТЬ' : 'IDENTIFY';
+  else if (state === 'result') document.getElementById('btnText').textContent = l === 'ru' ? 'РАСПОЗНАТЬ ЕЩЁ' : 'IDENTIFY AGAIN';
 }
 
 // ── PARTICLES ────────────────────────────────────────────
@@ -224,65 +278,65 @@ function typewrite(text,el,speed=20) {
   const iv=setInterval(()=>{ el.insertBefore(document.createTextNode(text[i]),cur); if(++i>=text.length){clearInterval(iv);setTimeout(()=>cur.remove(),900);} },speed);
 }
 
-// ── TRANSLATION API (БЕСПЛАТНЫЙ) ─────────────────────────
-async function translateText(text) {
-  if (lang === 'en') return text;
-  try {
-    const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|ru`);
-    const data = await res.json();
-    return data.responseData.translatedText;
-  } catch (e) {
-    return text; // Если ошибка API, возвращаем оригинал
+// ── API GEMINI ───────────────────────────────────────────
+async function analyzeImage(b64) {
+  const data = b64.split(',')[1];
+  const prompt = lang === 'ru'
+    ? 'Опиши кратко и точно, что на фото. 1-2 предложения. Без вводных слов, пиши сразу суть. Если есть текст на объекте, упомяни его.'
+    : 'Briefly and accurately describe what is in this photo. 1-2 sentences. No intro words. If there is text on the object, mention it.';
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: 'image/jpeg', data: data } }
+        ]
+      }],
+      generationConfig: { temperature: 0.4 }
+    })
+  });
+
+  if (!res.ok) {
+    if (res.status === 400) throw new Error('Неверный API-ключ Gemini.');
+    throw new Error(`Ошибка API ${res.status}`);
+  }
+  
+  const d = await res.json();
+  if (d.candidates && d.candidates[0].content.parts[0].text) {
+     return d.candidates[0].content.parts[0].text.trim();
+  } else {
+     throw new Error('Нейросеть не смогла дать ответ.');
   }
 }
 
-// ── BUTTON LOGIC ─────────────────────────────────────────
+// ── BUTTON ───────────────────────────────────────────────
 function handleBtn() { if(state==='idle') doRecognize(); else if(state==='result') doReset(); }
 
 async function doRecognize() {
-  if(!net) return;
   state='analyzing';
-  
-  const v = document.getElementById('videoEl');
-  const url = captureFrame(); 
-  showCaptured(url);
-  
+  const url=captureFrame(); showCaptured(url);
   const btn=document.getElementById('mainBtn'), txt=document.getElementById('btnText');
   txt.innerHTML=lang==='ru'?'Анализирую <span class="loading-dots"><span></span><span></span><span></span></span>':'Analyzing <span class="loading-dots"><span></span><span></span><span></span></span>';
   btn.className='analyzing';
-  
   document.getElementById('crosshair').classList.add('hidden');
   document.getElementById('scanLine').classList.add('scanning');
-  
   try {
-    // Распознаем объект с видео
-    const result = await net.classify(v);
-    
-    // Берем самый вероятный вариант (результат на англ)
-    let topResult = result[0].className.split(',')[0]; 
-    let probability = Math.round(result[0].probability * 100);
-
-    // Переводим если нужно
-    let translated = await translateText(topResult);
-    
-    let finalText = lang === 'ru' 
-      ? `Я вижу: ${translated} (уверенность: ${probability}%)`
-      : `I see: ${translated} (confidence: ${probability}%)`;
-
+    const result=await analyzeImage(url);
     document.getElementById('scanLine').classList.remove('scanning');
     document.getElementById('resultArea').classList.add('visible');
     document.getElementById('divider').classList.add('visible');
-    
-    typewrite(finalText, document.getElementById('resultText'), 20);
-    
-    btn.className='again'; 
+    document.getElementById('resultLabel').textContent=lang==='ru'?'РЕЗУЛЬТАТ':'RESULT';
+    typewrite(result,document.getElementById('resultText'),20);
+    btn.className='again'; txt.textContent=lang==='ru'?'РАСПОЗНАТЬ ЕЩЁ':'IDENTIFY AGAIN';
     state='result';
-    updateBtnText();
-    
   } catch(e) {
     document.getElementById('scanLine').classList.remove('scanning');
-    showError(lang==='ru'?'Не удалось распознать':'Failed to identify'); 
-    doReset();
+    showError(e.message); doReset();
   }
 }
 
@@ -294,7 +348,7 @@ function doReset() {
   document.getElementById('crosshair').classList.remove('hidden');
   document.getElementById('scanLine').classList.remove('scanning');
   document.getElementById('mainBtn').className='idle';
-  updateBtnText();
+  document.getElementById('btnText').textContent=lang==='ru'?'РАСПОЗНАТЬ':'IDENTIFY';
 }
 </script>
 </body>
