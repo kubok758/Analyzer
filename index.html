@@ -63,9 +63,20 @@
   #resultArea.visible { display:block; }
   #resultLabel { font-size:10px; font-weight:700; letter-spacing:0.14em; color:var(--accent); text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
   #resultLabel::before { content:''; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
-  #resultText { font-size:15px; line-height:1.6; color:var(--text); }
+  #resultText { font-size:14.5px; line-height:1.6; color:var(--text); }
   #typingCursor { display:inline-block; width:2px; height:1em; background:var(--accent); margin-left:2px; vertical-align:text-bottom; animation:blink .7s step-end infinite; border-radius:1px; }
   @keyframes blink { 50%{opacity:0} }
+  
+  /* Clarify UI */
+  #clarifyBox { display:none; margin-top:14px; position:relative; }
+  #clarifyBox.visible { display:block; }
+  #clarifyInput { width:100%; padding:13px 44px 13px 16px; border-radius:16px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.12); color:var(--text); font-size:13px; font-family:'Inter',sans-serif; outline:none; transition:border-color 0.25s; box-shadow:inset 0 2px 8px rgba(0,0,0,0.2); }
+  #clarifyInput:focus { border-color:rgba(120,210,255,0.4); }
+  #clarifyInput::placeholder { color:rgba(255,255,255,0.4); }
+  #clarifySendBtn { position:absolute; right:5px; top:50%; transform:translateY(-50%); background:linear-gradient(135deg,var(--accent),var(--accent2)); border:none; width:34px; height:34px; border-radius:12px; color:#fff; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:transform 0.15s, opacity 0.2s; box-shadow: 0 4px 12px rgba(120,180,255,0.25); }
+  #clarifySendBtn:active { transform:translateY(-50%) scale(0.9); }
+  #clarifySendBtn:disabled { opacity:0.5; cursor:not-allowed; }
+
   .divider { height:1px; background:linear-gradient(90deg,transparent,var(--glass-border),transparent); margin:14px 0; display:none; }
   .divider.visible { display:block; }
 
@@ -177,6 +188,12 @@
     <div id="resultArea">
       <div id="resultLabel">РЕЗУЛЬТАТ</div>
       <div id="resultText"></div>
+      
+      <div id="clarifyBox">
+        <input type="text" id="clarifyInput" placeholder="Уточнить деталь (1 вопрос)..." autocomplete="off">
+        <button id="clarifySendBtn" onclick="doClarify()">➤</button>
+      </div>
+      
     </div>
     <div id="divider" class="divider"></div>
     <button id="mainBtn" class="idle" onclick="handleBtn()">
@@ -195,6 +212,7 @@
 
 <script>
 let lang = 'ru', state = 'idle', apiKey = '', availableModels = [];
+let lastCapturedB64 = null; // Сохраняем фото для уточняющих вопросов
 
 // ── INIT ─────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
@@ -203,6 +221,11 @@ window.addEventListener('DOMContentLoaded', () => {
   if (saved) { apiKey = saved; document.getElementById('apiKeyInput').value = saved; setSaved(true); }
   document.getElementById('apiKeyInput').addEventListener('input', e => {
     document.getElementById('startBtn').disabled = e.target.value.trim().length < 10;
+  });
+  
+  // Отправка вопроса по Enter
+  document.getElementById('clarifyInput').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') doClarify();
   });
 });
 
@@ -235,6 +258,7 @@ function setLang(l) {
   lang = l;
   document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.dataset.lang === l));
   document.getElementById('resultLabel').textContent = l === 'ru' ? 'РЕЗУЛЬТАТ' : 'RESULT';
+  document.getElementById('clarifyInput').placeholder = l === 'ru' ? 'Уточнить деталь (1 вопрос)...' : 'Ask a detail (1 question)...';
   if (state === 'idle') document.getElementById('btnText').textContent = l === 'ru' ? 'РАСПОЗНАТЬ' : 'IDENTIFY';
   else if (state === 'result') document.getElementById('btnText').textContent = l === 'ru' ? 'РАСПОЗНАТЬ ЕЩЁ' : 'IDENTIFY AGAIN';
 }
@@ -273,9 +297,15 @@ function showError(msg) {
 }
 
 // ── TYPEWRITER ───────────────────────────────────────────
-function typewrite(text,el,speed=20) {
-  el.innerHTML=''; const cur=document.createElement('span'); cur.id='typingCursor'; el.appendChild(cur); let i=0;
-  const iv=setInterval(()=>{ el.insertBefore(document.createTextNode(text[i]),cur); if(++i>=text.length){clearInterval(iv);setTimeout(()=>cur.remove(),900);} },speed);
+function typewrite(text,el,speed=20, onComplete=null) {
+  const cur=document.createElement('span'); cur.id='typingCursor'; el.appendChild(cur); let i=0;
+  const iv=setInterval(()=>{ 
+    el.insertBefore(document.createTextNode(text[i]),cur); 
+    if(++i>=text.length){
+        clearInterval(iv);
+        setTimeout(()=>{ cur.remove(); if(onComplete) onComplete(); },300);
+    } 
+  },speed);
 }
 
 // ── AUTO DETECT ALL MODELS ───────────────────────────────
@@ -300,7 +330,6 @@ async function getAvailableModels() {
       if (names.includes(p)) sorted.push(p);
     }
     
-    // Добавляем остальные подходящие модели, если их нет в приоритетном списке
     for (let n of names) {
        if(!sorted.includes(n) && (n.includes('flash') || n.includes('vision') || n.includes('pro'))) {
            sorted.push(n);
@@ -313,19 +342,21 @@ async function getAvailableModels() {
 }
 
 // ── API GEMINI С АВТОПЕРЕКЛЮЧЕНИЕМ ───────────────────────
-async function analyzeImage(b64) {
+async function analyzeImage(b64, customPrompt = null) {
   if (availableModels.length === 0) {
     availableModels = await getAvailableModels();
   }
 
   const data = b64.split(',')[1];
-  const prompt = lang === 'ru'
-    ? 'Опиши кратко и точно, что на фото. 1-2 предложения. Без вводных слов, пиши сразу суть. Если есть текст на объекте, упомяни его.'
-    : 'Briefly and accurately describe what is in this photo. 1-2 sentences. No intro words. If there is text on the object, mention it.';
+  
+  // Обновленный промпт: жесткий фокус только на основном объекте
+  const defaultPromptRu = 'Назови и опиши ТОЛЬКО главный объект на фото, игнорируя фон, окружение и всё остальное вокруг. Ответь 1 предложением, сразу суть. Если на объекте есть бренд или текст, назови его.';
+  const defaultPromptEn = 'Name and describe ONLY the main object in the photo, ignoring the background and surroundings. Answer in 1 sentence, straight to the point. If there is a brand or text on it, mention it.';
+
+  const prompt = customPrompt || (lang === 'ru' ? defaultPromptRu : defaultPromptEn);
 
   let lastErrorMsg = "";
 
-  // Пробуем модели по очереди. Если 503 или 429 - идем к следующей.
   for (let model of availableModels) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     
@@ -340,7 +371,7 @@ async function analyzeImage(b64) {
               { inline_data: { mime_type: 'image/jpeg', data: data } }
             ]
           }],
-          generationConfig: { temperature: 0.4 }
+          generationConfig: { temperature: 0.3 }
         })
       });
 
@@ -354,20 +385,19 @@ async function analyzeImage(b64) {
         if (res.status === 400) throw new Error('Ошибка 400. Ключ недействителен.');
         if (res.status === 403) throw new Error('Ошибка 403: Доступ запрещен. Убедись, что VPN работает.');
         
-        // Ошибки перегрузки (503) или лимитов (429) - запоминаем и пробуем следующую модель
         lastErrorMsg = `${res.status}: ${errMsg} (${model})`;
         continue; 
       }
       
       const d = await res.json();
       if (d.candidates && d.candidates[0].content.parts[0].text) {
-         return `[${model.split('-')[1] || model}] ` + d.candidates[0].content.parts[0].text.trim();
+         // Возвращаем просто текст ответа (без префикса модели)
+         return d.candidates[0].content.parts[0].text.trim();
       } else {
          lastErrorMsg = `Нейросеть не смогла дать ответ (${model})`;
          continue;
       }
     } catch(e) {
-      // Критические ошибки прерывают выполнение сразу
       if(e.message.includes('400') || e.message.includes('403')) {
           throw e;
       }
@@ -375,28 +405,38 @@ async function analyzeImage(b64) {
     }
   }
 
-  // Если цикл прошел по всем моделям и ни одна не сработала:
   throw new Error(`Все модели перегружены. Последняя ошибка: ${lastErrorMsg}`);
 }
 
-// ── BUTTON ───────────────────────────────────────────────
+// ── BUTTONS LOGIC ─────────────────────────────────────────
 function handleBtn() { if(state==='idle') doRecognize(); else if(state==='result') doReset(); }
 
 async function doRecognize() {
   state='analyzing';
-  const url=captureFrame(); showCaptured(url);
+  lastCapturedB64 = captureFrame(); 
+  showCaptured(lastCapturedB64);
+  
   const btn=document.getElementById('mainBtn'), txt=document.getElementById('btnText');
   txt.innerHTML=lang==='ru'?'Анализирую <span class="loading-dots"><span></span><span></span><span></span></span>':'Analyzing <span class="loading-dots"><span></span><span></span><span></span></span>';
   btn.className='analyzing';
+  
   document.getElementById('crosshair').classList.add('hidden');
   document.getElementById('scanLine').classList.add('scanning');
+  
   try {
-    const result=await analyzeImage(url);
+    const result=await analyzeImage(lastCapturedB64);
+    
     document.getElementById('scanLine').classList.remove('scanning');
     document.getElementById('resultArea').classList.add('visible');
     document.getElementById('divider').classList.add('visible');
     document.getElementById('resultLabel').textContent=lang==='ru'?'РЕЗУЛЬТАТ':'RESULT';
-    typewrite(result,document.getElementById('resultText'),20);
+    document.getElementById('resultText').innerHTML='';
+    
+    typewrite(result, document.getElementById('resultText'), 20, () => {
+        // После печати текста показываем блок для уточняющего вопроса
+        document.getElementById('clarifyBox').classList.add('visible');
+    });
+    
     btn.className='again'; txt.textContent=lang==='ru'?'РАСПОЗНАТЬ ЕЩЁ':'IDENTIFY AGAIN';
     state='result';
   } catch(e) {
@@ -405,9 +445,57 @@ async function doRecognize() {
   }
 }
 
+// ── CLARIFY LOGIC ─────────────────────────────────────────
+async function doClarify() {
+  const inputEl = document.getElementById('clarifyInput');
+  const btnEl = document.getElementById('clarifySendBtn');
+  const q = inputEl.value.trim();
+  
+  if(!q || !lastCapturedB64) return;
+
+  btnEl.disabled = true;
+  inputEl.disabled = true;
+  btnEl.innerHTML = '<span class="loading-dots" style="color:#fff"><span></span><span></span><span></span></span>';
+
+  try {
+     const p = lang === 'ru' ? `Ответь кратко на вопрос об объекте на этом фото: ${q}` : `Answer this question briefly about the object in the photo: ${q}`;
+     const ans = await analyzeImage(lastCapturedB64, p);
+
+     const rt = document.getElementById('resultText');
+     
+     // Скрываем блок вопроса, так как разрешен только 1 вопрос
+     document.getElementById('clarifyBox').classList.remove('visible');
+     
+     const separator = document.createElement('div');
+     separator.style.cssText = "margin:14px 0 8px; font-size:10px; font-weight:700; letter-spacing:0.1em; color:var(--accent); text-transform:uppercase;";
+     separator.textContent = lang === 'ru' ? 'ОТВЕТ:' : 'ANSWER:';
+     
+     const ansBlock = document.createElement('div');
+     ansBlock.style.color = 'var(--text)';
+     
+     rt.appendChild(separator);
+     typewrite(ans, ansBlock, 20);
+     rt.appendChild(ansBlock);
+
+  } catch(e) {
+     showError(e.message);
+     btnEl.disabled = false;
+     inputEl.disabled = false;
+     btnEl.innerHTML = '➤';
+  }
+}
+
 function doReset() {
-  state='idle'; hideCaptured();
+  state='idle'; 
+  hideCaptured();
+  lastCapturedB64 = null;
   document.getElementById('resultArea').classList.remove('visible');
+  document.getElementById('clarifyBox').classList.remove('visible');
+  document.getElementById('clarifyInput').value = '';
+  document.getElementById('clarifyInput').disabled = false;
+  document.getElementById('clarifySendBtn').disabled = false;
+  document.getElementById('clarifySendBtn').innerHTML = '➤';
+  
   document.getElementById('divider').classList.remove('visible');
   document.getElementById('resultText').innerHTML='';
   document.getElementById('crosshair').classList.remove('hidden');
