@@ -68,12 +68,19 @@
   #panelContent { padding:18px; border-radius:var(--radius); }
   #resultArea { display:none; margin-bottom:14px; }
   #resultArea.visible { display:block; }
-  #resultLabel { font-size:10px; font-weight:700; letter-spacing:0.14em; color:var(--accent); text-transform:uppercase; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+  #resultLabel { font-size:10px; font-weight:700; letter-spacing:0.14em; color:var(--accent); text-transform:uppercase; display:flex; align-items:center; gap:6px; margin:0; }
   #resultLabel::before { content:''; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--accent); box-shadow:0 0 8px var(--accent); }
   #resultText { font-size:14.5px; line-height:1.6; color:var(--text); }
   #typingCursor { display:inline-block; width:2px; height:1em; background:var(--accent); margin-left:2px; vertical-align:text-bottom; animation:blink .7s step-end infinite; border-radius:1px; }
   @keyframes blink { 50%{opacity:0} }
   
+  /* TTS Button UI */
+  .tts-btn { display:none; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.15); color:var(--accent); cursor:pointer; transition:all 0.2s; outline:none; }
+  .tts-btn.visible { display:flex; }
+  .tts-btn:active { transform:scale(0.9); }
+  .tts-btn.playing { background:rgba(120,210,255,0.2); box-shadow:0 0 12px rgba(120,210,255,0.4); animation:pulse 1.5s infinite; color:#fff; }
+  @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(120,210,255,0.4); } 70% { box-shadow:0 0 0 6px rgba(120,210,255,0); } 100% { box-shadow:0 0 0 0 rgba(120,210,255,0); } }
+
   /* Clarify UI */
   #clarifyBox { display:none; margin-top:14px; position:relative; }
   #clarifyBox.visible { display:block; }
@@ -193,7 +200,17 @@
 <div id="bottomPanel">
   <div id="panelContent" class="glass">
     <div id="resultArea">
-      <div id="resultLabel">РЕЗУЛЬТАТ</div>
+      
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <div id="resultLabel">РЕЗУЛЬТАТ</div>
+        <button id="ttsBtn" class="tts-btn" onclick="toggleTTS()" title="Озвучить ответ">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+        </button>
+      </div>
+      
       <div id="resultText"></div>
       
       <div id="clarifyBox">
@@ -229,11 +246,11 @@ if ('serviceWorker' in navigator) {
 
 let lang = 'ru', state = 'idle', apiKey = '', availableModels = [];
 let lastCapturedB64 = null; 
+let synth = window.speechSynthesis;
 
 // ── INIT ─────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   spawnParticles();
-  // ИЗМЕНЕНИЕ: Теперь используем localStorage, чтобы ключ жил вечно
   const saved = localStorage.getItem('_gemini_key');
   if (saved) { apiKey = saved; document.getElementById('apiKeyInput').value = saved; setSaved(true); }
   document.getElementById('apiKeyInput').addEventListener('input', e => {
@@ -264,7 +281,6 @@ function showApiScreen() { document.getElementById('apiScreen').classList.remove
 function startApp() {
   const k = document.getElementById('apiKeyInput').value.trim();
   if (k.length < 10) return;
-  // ИЗМЕНЕНИЕ: Сохраняем в localStorage
   apiKey = k; localStorage.setItem('_gemini_key', k); setSaved(true);
   document.getElementById('apiScreen').classList.add('hidden');
   initCamera();
@@ -278,6 +294,7 @@ function setLang(l) {
   document.getElementById('clarifyInput').placeholder = l === 'ru' ? 'Уточнить деталь (1 вопрос)...' : 'Ask a detail (1 question)...';
   if (state === 'idle') document.getElementById('btnText').textContent = l === 'ru' ? 'РАСПОЗНАТЬ' : 'IDENTIFY';
   else if (state === 'result') document.getElementById('btnText').textContent = l === 'ru' ? 'РАСПОЗНАТЬ ЕЩЁ' : 'IDENTIFY AGAIN';
+  stopTTS();
 }
 
 // ── PARTICLES ────────────────────────────────────────────
@@ -323,6 +340,38 @@ function typewrite(text,el,speed=20, onComplete=null) {
         setTimeout(()=>{ cur.remove(); if(onComplete) onComplete(); },300);
     } 
   },speed);
+}
+
+// ── TTS (ОЗВУЧКА) ─────────────────────────────────────────
+function toggleTTS() {
+  const btn = document.getElementById('ttsBtn');
+  
+  // Если уже говорит - выключаем
+  if (synth.speaking) {
+    stopTTS();
+    return;
+  }
+  
+  // Читаем весь текстовый контент из блока (и само описание, и уточнение, если есть)
+  let text = document.getElementById('resultText').innerText;
+  // Убираем служебное слово "ОТВЕТ:", чтобы не ломать погружение
+  text = text.replace(/ОТВЕТ:|ANSWER:/gi, '').trim();
+  
+  if (!text) return;
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = lang === 'ru' ? 'ru-RU' : 'en-US';
+  
+  utterance.onstart = () => btn.classList.add('playing');
+  utterance.onend = () => btn.classList.remove('playing');
+  utterance.onerror = () => btn.classList.remove('playing');
+
+  synth.speak(utterance);
+}
+
+function stopTTS() {
+  if (synth.speaking) synth.cancel();
+  document.getElementById('ttsBtn').classList.remove('playing');
 }
 
 // ── AUTO DETECT ALL MODELS ───────────────────────────────
@@ -428,6 +477,7 @@ function handleBtn() { if(state==='idle') doRecognize(); else if(state==='result
 
 async function doRecognize() {
   state='analyzing';
+  stopTTS(); // Выключаем звук, если он шел
   lastCapturedB64 = captureFrame(); 
   showCaptured(lastCapturedB64);
   
@@ -437,6 +487,9 @@ async function doRecognize() {
   
   document.getElementById('crosshair').classList.add('hidden');
   document.getElementById('scanLine').classList.add('scanning');
+  
+  // Скрываем кнопку озвучки до готовности
+  document.getElementById('ttsBtn').classList.remove('visible');
   
   try {
     const result=await analyzeImage(lastCapturedB64);
@@ -449,6 +502,7 @@ async function doRecognize() {
     
     typewrite(result, document.getElementById('resultText'), 20, () => {
         document.getElementById('clarifyBox').classList.add('visible');
+        document.getElementById('ttsBtn').classList.add('visible'); // Показываем динамик
     });
     
     btn.className='again'; txt.textContent=lang==='ru'?'РАСПОЗНАТЬ ЕЩЁ':'IDENTIFY AGAIN';
@@ -467,6 +521,7 @@ async function doClarify() {
   
   if(!q || !lastCapturedB64) return;
 
+  stopTTS(); // Прерываем чтение, если оно шло
   btnEl.disabled = true;
   inputEl.disabled = true;
   btnEl.innerHTML = '<span class="loading-dots" style="color:#fff"><span></span><span></span><span></span></span>';
@@ -500,8 +555,10 @@ async function doClarify() {
 
 function doReset() {
   state='idle'; 
+  stopTTS(); // Выключаем звук
   hideCaptured();
   lastCapturedB64 = null;
+  document.getElementById('ttsBtn').classList.remove('visible');
   document.getElementById('resultArea').classList.remove('visible');
   document.getElementById('clarifyBox').classList.remove('visible');
   document.getElementById('clarifyInput').value = '';
