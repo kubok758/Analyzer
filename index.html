@@ -128,7 +128,7 @@
       <div class="api-icon">⚡</div>
     </div>
     <div class="api-title">Распознаватель <span>AI</span></div>
-    <div class="api-sub">Автопоиск лучшей модели Gemini</div>
+    <div class="api-sub">Умный выбор свободной модели Gemini</div>
     <div class="api-inp-wrap">
       <input id="apiKeyInput" type="password" placeholder="AIzaSy..." autocomplete="off" autocorrect="off" spellcheck="false">
       <button id="toggleVis" onclick="toggleVis()">👁</button>
@@ -194,7 +194,7 @@
 <div id="errorToast"></div>
 
 <script>
-let lang = 'ru', state = 'idle', apiKey = '', activeModel = '';
+let lang = 'ru', state = 'idle', apiKey = '', availableModels = [];
 
 // ── INIT ─────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
@@ -216,7 +216,7 @@ function setSaved(v) {
   if (v) document.getElementById('startBtn').disabled = false;
 }
 function clearKey() {
-  sessionStorage.removeItem('_gemini_key'); apiKey = ''; activeModel = '';
+  sessionStorage.removeItem('_gemini_key'); apiKey = ''; availableModels = [];
   document.getElementById('apiKeyInput').value = '';
   document.getElementById('startBtn').disabled = true;
   setSaved(false);
@@ -278,18 +278,16 @@ function typewrite(text,el,speed=20) {
   const iv=setInterval(()=>{ el.insertBefore(document.createTextNode(text[i]),cur); if(++i>=text.length){clearInterval(iv);setTimeout(()=>cur.remove(),900);} },speed);
 }
 
-// ── AUTO DETECT MODEL ────────────────────────────────────
-async function getBestModel() {
+// ── AUTO DETECT ALL MODELS ───────────────────────────────
+async function getAvailableModels() {
   try {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
     if (!res.ok) throw new Error();
     const data = await res.json();
     
-    // Оставляем только те, что могут генерировать контент
     const validModels = (data.models || []).filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'));
     const names = validModels.map(m => m.name.replace('models/', ''));
     
-    // Ищем самую лучшую доступную модель (от новых к старым)
     const priorities = [
       'gemini-3.0-flash', 'gemini-3.0-pro', 
       'gemini-2.5-flash', 'gemini-2.0-flash', 
@@ -297,24 +295,27 @@ async function getBestModel() {
       'gemini-pro-vision', 'gemini-flash'
     ];
     
+    let sorted = [];
     for (let p of priorities) {
-      if (names.includes(p)) return p;
+      if (names.includes(p)) sorted.push(p);
     }
     
-    // Если ничего из списка не совпало, ищем любую, где есть 'flash' или 'vision'
-    const fallback = names.find(n => n.includes('flash') || n.includes('vision'));
-    return fallback || names[0] || 'gemini-1.5-flash';
+    // Добавляем остальные подходящие модели, если их нет в приоритетном списке
+    for (let n of names) {
+       if(!sorted.includes(n) && (n.includes('flash') || n.includes('vision') || n.includes('pro'))) {
+           sorted.push(n);
+       }
+    }
+    return sorted.length > 0 ? sorted : ['gemini-1.5-flash'];
   } catch (e) {
-    // В случае ошибки получения списка ставим безопасный дефолт
-    return 'gemini-pro-vision'; 
+    return ['gemini-1.5-flash', 'gemini-pro-vision']; 
   }
 }
 
-// ── API GEMINI ───────────────────────────────────────────
+// ── API GEMINI С АВТОПЕРЕКЛЮЧЕНИЕМ ───────────────────────
 async function analyzeImage(b64) {
-  if (!activeModel) {
-    activeModel = await getBestModel();
-    console.log("Выбрана модель:", activeModel);
+  if (availableModels.length === 0) {
+    availableModels = await getAvailableModels();
   }
 
   const data = b64.split(',')[1];
@@ -322,44 +323,60 @@ async function analyzeImage(b64) {
     ? 'Опиши кратко и точно, что на фото. 1-2 предложения. Без вводных слов, пиши сразу суть. Если есть текст на объекте, упомяни его.'
     : 'Briefly and accurately describe what is in this photo. 1-2 sentences. No intro words. If there is text on the object, mention it.';
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`;
-  
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          { inline_data: { mime_type: 'image/jpeg', data: data } }
-        ]
-      }],
-      generationConfig: { temperature: 0.4 }
-    })
-  });
+  let lastErrorMsg = "";
 
-  if (!res.ok) {
-    let errMsg = `Ошибка API ${res.status}`;
+  // Пробуем модели по очереди. Если 503 или 429 - идем к следующей.
+  for (let model of availableModels) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    
     try {
-       const errData = await res.json();
-       if (errData.error && errData.error.message) errMsg = errData.error.message;
-    } catch(e) {}
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: 'image/jpeg', data: data } }
+            ]
+          }],
+          generationConfig: { temperature: 0.4 }
+        })
+      });
 
-    if (res.status === 400) throw new Error(`Ошибка 400. Ключ недействителен или модель ${activeModel} не поддерживает запрос.`);
-    if (res.status === 403) throw new Error('Ошибка 403: Доступ запрещен. Убедись, что VPN работает.');
-    
-    // Если модель вдруг отвалилась, сбросим activeModel, чтобы в следующий раз найти новую
-    if (res.status === 404) activeModel = ''; 
-    
-    throw new Error(`${res.status}: ${errMsg} (Модель: ${activeModel})`);
+      if (!res.ok) {
+        let errMsg = `Ошибка API ${res.status}`;
+        try {
+           const errData = await res.json();
+           if (errData.error && errData.error.message) errMsg = errData.error.message;
+        } catch(e) {}
+
+        if (res.status === 400) throw new Error('Ошибка 400. Ключ недействителен.');
+        if (res.status === 403) throw new Error('Ошибка 403: Доступ запрещен. Убедись, что VPN работает.');
+        
+        // Ошибки перегрузки (503) или лимитов (429) - запоминаем и пробуем следующую модель
+        lastErrorMsg = `${res.status}: ${errMsg} (${model})`;
+        continue; 
+      }
+      
+      const d = await res.json();
+      if (d.candidates && d.candidates[0].content.parts[0].text) {
+         return `[${model.split('-')[1] || model}] ` + d.candidates[0].content.parts[0].text.trim();
+      } else {
+         lastErrorMsg = `Нейросеть не смогла дать ответ (${model})`;
+         continue;
+      }
+    } catch(e) {
+      // Критические ошибки прерывают выполнение сразу
+      if(e.message.includes('400') || e.message.includes('403')) {
+          throw e;
+      }
+      lastErrorMsg = e.message;
+    }
   }
-  
-  const d = await res.json();
-  if (d.candidates && d.candidates[0].content.parts[0].text) {
-     return `[${activeModel.split('-')[1] || activeModel}] ` + d.candidates[0].content.parts[0].text.trim();
-  } else {
-     throw new Error('Нейросеть не смогла дать ответ.');
-  }
+
+  // Если цикл прошел по всем моделям и ни одна не сработала:
+  throw new Error(`Все модели перегружены. Последняя ошибка: ${lastErrorMsg}`);
 }
 
 // ── BUTTON ───────────────────────────────────────────────
