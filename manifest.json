@@ -1,0 +1,22 @@
+{
+  "name": "Распознаватель AI",
+  "short_name": "Распознаватель",
+  "description": "Мобильный AI-распознаватель объектов",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#040412",
+  "theme_color": "#040412",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
