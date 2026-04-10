@@ -285,7 +285,8 @@ async function analyzeImage(b64) {
     ? 'Опиши кратко и точно, что на фото. 1-2 предложения. Без вводных слов, пиши сразу суть. Если есть текст на объекте, упомяни его.'
     : 'Briefly and accurately describe what is in this photo. 1-2 sentences. No intro words. If there is text on the object, mention it.';
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  // Обновленный эндпоинт: используем gemini-1.5-flash-latest
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
   
   const res = await fetch(url, {
     method: 'POST',
@@ -302,8 +303,18 @@ async function analyzeImage(b64) {
   });
 
   if (!res.ok) {
+    let errMsg = `Ошибка API ${res.status}`;
+    try {
+       // Пытаемся вытащить точный текст ошибки от серверов Google
+       const errData = await res.json();
+       if (errData.error && errData.error.message) errMsg = errData.error.message;
+    } catch(e) {}
+
     if (res.status === 400) throw new Error('Неверный API-ключ Gemini.');
-    throw new Error(`Ошибка API ${res.status}`);
+    if (res.status === 403) throw new Error('Ошибка 403: Доступ запрещен. Убедись, что VPN работает.');
+    
+    // Если ошибка 404 или любая другая, выводим подробности
+    throw new Error(`${res.status}: ${errMsg}`);
   }
   
   const d = await res.json();
